@@ -1,0 +1,87 @@
+diff -urpN /tmp/linux-3.14.1/arch/x86/syscalls/syscall_32.tbl ./arch/x86/syscalls/syscall_32.tbl
+--- /tmp/linux-3.14.1/arch/x86/syscalls/syscall_32.tbl	2017-10-31 14:13:32.265896214 +0100
++++ ./arch/x86/syscalls/syscall_32.tbl	2017-10-31 14:26:31.645873140 +0100
+@@ -359,3 +359,4 @@
+ 350	i386	finit_module		sys_finit_module
+ 351	i386	sched_setattr		sys_sched_setattr
+ 352	i386	sched_getattr		sys_sched_getattr
++353	i386	ledctl				sys_ledctl
+diff -urpN /tmp/linux-3.14.1/arch/x86/syscalls/syscall_64.tbl ./arch/x86/syscalls/syscall_64.tbl
+--- /tmp/linux-3.14.1/arch/x86/syscalls/syscall_64.tbl	2017-10-31 14:13:32.269896213 +0100
++++ ./arch/x86/syscalls/syscall_64.tbl	2017-10-31 14:27:05.325872143 +0100
+@@ -322,6 +322,7 @@
+ 313	common	finit_module		sys_finit_module
+ 314	common	sched_setattr		sys_sched_setattr
+ 315	common	sched_getattr		sys_sched_getattr
++316	common	ledctl				sys_ledctl
+ 
+ #
+ # x32-specific system call numbers start at 512 to avoid cache impact
+diff -urpN /tmp/linux-3.14.1/kernel/ledctl.c ./kernel/ledctl.c
+--- /tmp/linux-3.14.1/kernel/ledctl.c	1970-01-01 01:00:00.000000000 +0100
++++ ./kernel/ledctl.c	2017-10-31 15:22:28.265773768 +0100
+@@ -0,0 +1,30 @@
++#include <linux/syscalls.h> /* For SYSCALL_DEFINEi() */
++#include <linux/kernel.h>
++#include <asm-generic/errno.h>
++#include <linux/init.h>
++#include <linux/tty.h>      /* For fg_console */
++#include <linux/kd.h>       /* For KDSETLED */
++#include <linux/vt_kern.h>
++
++/* Get driver handler */
++struct tty_driver* get_kbd_driver_handler(void){
++   printk(KERN_INFO "modleds: loading\n");
++   printk(KERN_INFO "modleds: fgconsole is %x\n", fg_console);
++   return vc_cons[fg_console].d->port.tty->driver;
++}
++
++/* Set led state to that specified by mask */
++static inline int set_leds(struct tty_driver* handler, unsigned int mask){
++    return (handler->ops->ioctl) (vc_cons[fg_console].d->port.tty, KDSETLED,mask);
++}
++
++SYSCALL_DEFINE1(ledctl, unsigned int, leds) {
++	static struct tty_driver* kbd_driver = NULL;
++
++	if(!kbd_driver)
++		kbd_driver = get_kbd_driver_handler();
++	
++	return set_leds(kbd_driver, leds);
++}
++
++
+diff -urpN /tmp/linux-3.14.1/kernel/Makefile ./kernel/Makefile
+--- /tmp/linux-3.14.1/kernel/Makefile	2017-10-31 14:13:39.209896008 +0100
++++ ./kernel/Makefile	2017-10-31 14:28:07.213870311 +0100
+@@ -10,7 +10,7 @@ obj-y     = fork.o exec_domain.o panic.o
+ 	    kthread.o sys_ni.o posix-cpu-timers.o \
+ 	    hrtimer.o nsproxy.o \
+ 	    notifier.o ksysfs.o cred.o reboot.o \
+-	    async.o range.o groups.o smpboot.o
++	    async.o range.o groups.o smpboot.o ledctl.o
+ 
+ ifdef CONFIG_FUNCTION_TRACER
+ # Do not trace debug files and internal ftrace files
+diff -urpN /tmp/linux-3.14.1/security/tomoyo/builtin-policy.h ./security/tomoyo/builtin-policy.h
+--- /tmp/linux-3.14.1/security/tomoyo/builtin-policy.h	1970-01-01 01:00:00.000000000 +0100
++++ ./security/tomoyo/builtin-policy.h	2017-10-31 15:20:35.117777118 +0100
+@@ -0,0 +1,12 @@
++static char tomoyo_builtin_profile[] __initdata =
++"";
++static char tomoyo_builtin_exception_policy[] __initdata =
++"initialize_domain /sbin/modprobe from any\n"
++"initialize_domain /sbin/hotplug from any\n"
++"";
++static char tomoyo_builtin_domain_policy[] __initdata =
++"";
++static char tomoyo_builtin_manager[] __initdata =
++"";
++static char tomoyo_builtin_stat[] __initdata =
++"";
+diff -urpN /tmp/linux-3.14.1/security/tomoyo/policy/exception_policy.conf ./security/tomoyo/policy/exception_policy.conf
+--- /tmp/linux-3.14.1/security/tomoyo/policy/exception_policy.conf	1970-01-01 01:00:00.000000000 +0100
++++ ./security/tomoyo/policy/exception_policy.conf	2017-10-31 15:20:31.293777231 +0100
+@@ -0,0 +1,2 @@
++initialize_domain /sbin/modprobe from any
++initialize_domain /sbin/hotplug from any
